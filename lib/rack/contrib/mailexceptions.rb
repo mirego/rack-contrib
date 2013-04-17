@@ -23,7 +23,8 @@ module Rack
           :authentication => :login,
           :user_name      => nil,
           :password       => nil
-        }
+        },
+        :filter_parameters => []
       }
       @template = ERB.new(TEMPLATE)
       yield self if block_given?
@@ -41,7 +42,7 @@ module Rack
       [status, headers, body]
     end
 
-    %w[to from subject].each do |meth|
+    %w[to from subject filter_parameters].each do |meth|
       define_method(meth) { |value| @config[meth.to_sym] = value }
     end
 
@@ -55,8 +56,18 @@ module Rack
         :from => config[:from], 
         :to => config[:to],
          :subject => config[:subject] % [exception.to_s],
-         :body => @template.result(binding)
+         :body => filter_parameters(@template.result(binding))
       })
+    end
+
+    def filter_parameters(body)
+      @config[:filter_parameters].each do |parameter|
+        # Query string: ?password=test&
+        body.gsub!(/((^|\?|&)#{parameter}=)[^&\r\n]+/) {%(#{$1}[FILTERED])}
+        # Hash: "password"=>"test"
+        body.gsub!(/("#{parameter}"\s*=>\s*)((")(?:\\?+.)*?\3)/) {%(#{$1}"[FILTERED]")}
+      end
+      return body
     end
 
     def send_notification(exception, env)
